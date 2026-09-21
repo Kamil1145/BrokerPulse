@@ -1,0 +1,23 @@
+# .NET (api/)
+bin/
+obj/
+*.user
+.vs/
+
+# Node / Astro (web/)
+node_modules/
+web/dist/
+web/.astro/
+
+# Secrets and local config
+.env
+.env.*
+!.env.example
+api/appsettings.*.local.json
+
+# Claude Code: local, per-machine settings
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db

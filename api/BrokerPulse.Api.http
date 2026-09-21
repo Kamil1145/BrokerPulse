@@ -1,0 +1,6 @@
+@BrokerPulse_Api_HostAddress = http://localhost:5154
+
+GET {{BrokerPulse_Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
