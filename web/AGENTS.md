@@ -1,26 +1,20 @@
-## Development
+# web/ Agent Guidelines
 
-When starting the dev server, use background mode:
+Astro frontend (TypeScript strict) with React islands, npm. Serves the core BrokerPulse flow: voice recording, profile review, ranked matches.
 
-```
-astro dev --background
-```
+## Hard rules
 
-Manage the background server with `astro dev stop`, `astro dev status`, and `astro dev logs`.
+- React (`@astrojs/react`) is the established framework for interactive islands — use `.tsx` components with Astro's client directives (`client:load`, `client:visible`, etc.) for anything needing client-side state. Keep `.astro` files for static structure only, per Astro's zero-JS-by-default model.
+- TypeScript is strict (`tsconfig.json` extends `astro/tsconfigs/strict`) — no `any` without a comment explaining why.
 
-## Framework components
+## Commands
 
-React is the established convention for interactive islands (`@astrojs/react` is configured in `astro.config.mjs`). Use `.tsx` components with Astro's client directives (`client:load`, `client:visible`, etc.) for anything that needs client-side state or interactivity — recording, profile review/edit, ranked matches. Keep `.astro` files for static structure and layout; reach for React only where interactivity is actually needed, per Astro's zero-JS-by-default model.
+`npm run dev` (or `astro dev --background` to run detached — manage with `astro dev stop|status|logs`), `npm run build`, `npm run preview`.
 
-## Documentation
+## Current state
 
-Full documentation: https://docs.astro.build
+`src/pages/`, `src/layouts/`, `src/components/` hold one file each (`index.astro`, `Layout.astro`, `Welcome.astro`) — the unmodified Astro template, not real features yet. No test framework is configured (no Vitest, no `npm test`).
 
-Consult these guides before working on related tasks:
+## See also
 
-- [Adding pages, dynamic routes, or middleware](https://docs.astro.build/en/guides/routing/)
-- [Working with Astro components](https://docs.astro.build/en/basics/astro-components/)
-- [Using React, Vue, Svelte, or other framework components](https://docs.astro.build/en/guides/framework-components/)
-- [Adding or managing content](https://docs.astro.build/en/guides/content-collections/)
-- [Adding styles or using Tailwind](https://docs.astro.build/en/guides/styling/)
-- [Supporting multiple languages](https://docs.astro.build/en/guides/internationalization/)
+`@../CLAUDE.md` for repo-wide rules (repository layout, `context/` conventions). Full Astro docs: https://docs.astro.build
