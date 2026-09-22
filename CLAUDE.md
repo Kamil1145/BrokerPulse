@@ -70,29 +70,10 @@ Skille nie mogą zapisywać do `context/archive/`. Zarchiwizowane zmiany są nie
 
 <!-- END @przeprogramowani/10x-cli -->
 
-## web/ (Astro)
+## Repository layout
 
-Frontend w katalogu `web/`. Poniższe zasady pochodzą z szablonu Astro i dotyczą pracy w `web/`.
-
-### Development
-
-Serwer dev uruchamiaj w tle (z katalogu `web/`):
-
-```
-astro dev --background
-```
-
-Zarządzanie serwerem w tle: `astro dev stop`, `astro dev status`, `astro dev logs`.
-
-### Dokumentacja
-
-Pełna dokumentacja: https://docs.astro.build
-
-Przed pracą nad poniższymi zagadnieniami zajrzyj do właściwego przewodnika:
-
-- [Strony, dynamiczne trasy, middleware](https://docs.astro.build/en/guides/routing/)
-- [Komponenty Astro](https://docs.astro.build/en/basics/astro-components/)
-- [React, Vue, Svelte i inne komponenty frameworków](https://docs.astro.build/en/guides/framework-components/)
-- [Treści i kolekcje treści](https://docs.astro.build/en/guides/content-collections/)
-- [Style i Tailwind](https://docs.astro.build/en/guides/styling/)
-- [Wiele języków (i18n)](https://docs.astro.build/en/guides/internationalization/)
+- `api/` — ASP.NET Core minimal API (C#, `net10.0`). Project: `api/BrokerPulse.Api.csproj`, solution: `api/BrokerPulse.Api.slnx`. See `api/CLAUDE.md` for component-specific conventions.
+- `web/` — Astro frontend with React islands (TypeScript strict), npm. See `web/CLAUDE.md` for component-specific conventions.
+- `context/` — project artifacts (PRD, tech stack, bootstrap logs). Never edit files under `context/archive/`.
+- `global.json` — pins the .NET SDK version used by `api/`.
+- Both components are independent: no shared code between `api/` and `web/`. Component-level conventions live in each component's own `CLAUDE.md`, loaded automatically when working in that directory — this file stays cross-cutting.
