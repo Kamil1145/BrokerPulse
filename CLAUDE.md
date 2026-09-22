@@ -1,3 +1,11 @@
+## Repository layout
+
+- `api/` — ASP.NET Core minimal API (C#, `net10.0`). Project: `api/BrokerPulse.Api.csproj`, solution: `api/BrokerPulse.Api.slnx`. See `api/CLAUDE.md` for component-specific conventions.
+- `web/` — Astro frontend with React islands (TypeScript strict), npm. See `web/CLAUDE.md` for component-specific conventions.
+- `context/` — project artifacts (PRD, tech stack, bootstrap logs). Never edit files under `context/archive/`.
+- `global.json` — pins the .NET SDK version used by `api/`.
+- Both components are independent: no shared code between `api/` and `web/`. Component-level conventions live in each component's own `CLAUDE.md`, loaded automatically when working in that directory — this file stays cross-cutting.
+
 <!-- BEGIN @przeprogramowani/10x-cli -->
 
 ## Zestaw narzędzi AI 10xDevs — Moduł 1, Lekcja 4
@@ -96,11 +104,3 @@ Dostarczone umiejętności nie zawierają odniesień do 10xDevs / kohorty / cert
 Umiejętności nie mogą zapisywać do `context/archive/`. Zarchiwizowane zmiany są niezmienne; jeśli rozwiązana ścieżka docelowa zaczyna się od `context/archive/`, przerwij z komunikatem: „This change is archived. Open a new change with `/10x-new` instead.”
 
 <!-- END @przeprogramowani/10x-cli -->
-
-## Repository layout
-
-- `api/` — ASP.NET Core minimal API (C#, `net10.0`). Project: `api/BrokerPulse.Api.csproj`, solution: `api/BrokerPulse.Api.slnx`. See `api/CLAUDE.md` for component-specific conventions.
-- `web/` — Astro frontend with React islands (TypeScript strict), npm. See `web/CLAUDE.md` for component-specific conventions.
-- `context/` — project artifacts (PRD, tech stack, bootstrap logs). Never edit files under `context/archive/`.
-- `global.json` — pins the .NET SDK version used by `api/`.
-- Both components are independent: no shared code between `api/` and `web/`. Component-level conventions live in each component's own `CLAUDE.md`, loaded automatically when working in that directory — this file stays cross-cutting.
