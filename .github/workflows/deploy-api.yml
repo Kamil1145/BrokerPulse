@@ -1,15 +1,18 @@
 name: Deploy API
 
+# Called from ci.yml only after the CI jobs pass on main. workflow_dispatch is a
+# deliberate manual override (redeploy without CI); it needs write access to the repo.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "api/**"
-      - ".github/workflows/deploy-api.yml"
+  workflow_call:
+  workflow_dispatch:
 
 permissions:
   id-token: write
   contents: read
+
+concurrency:
+  group: deploy-api
+  cancel-in-progress: false
 
 env:
   RESOURCE_GROUP: brokerpulse-rg

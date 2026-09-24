@@ -1,9 +1,14 @@
 name: CI
 
-# Runs on every pull request (no path filter) so the jobs can be made required
-# status checks with branch protection. Deploys stay in deploy-api.yml / deploy-web.yml.
+# Pull requests: build/format checks only (no path filter, so the jobs can be
+# required status checks if branch protection ever becomes available).
+# Push to main: the same checks, then deploys, which run ONLY if both checks pass
+# and only for the component whose files changed. Free-plan private repos have no
+# branch protection or required reviewers, so this is the deploy gate.
 on:
   pull_request:
+    branches: [main]
+  push:
     branches: [main]
   workflow_dispatch:
 
@@ -12,7 +17,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   api:
@@ -61,3 +66,58 @@ jobs:
       - run: npm run build
 
       # No test framework or `astro check` is configured yet. Add them here when they exist.
+
+  changes:
+    name: Detect changed components
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      api: ${{ steps.diff.outputs.api }}
+      web: ${{ steps.diff.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: diff
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          # First push or unreachable "before" commit: deploy everything.
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "api=true" >> "$GITHUB_OUTPUT"
+            echo "web=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          FILES=$(git diff --name-only "$BEFORE" "$GITHUB_SHA")
+          echo "$FILES"
+          if echo "$FILES" | grep -qE '^(api/|\.github/workflows/deploy-api\.yml$)'; then
+            echo "api=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "api=false" >> "$GITHUB_OUTPUT"
+          fi
+          if echo "$FILES" | grep -qE '^(web/|\.github/workflows/deploy-web\.yml$)'; then
+            echo "web=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "web=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy-api:
+    name: Deploy API
+    needs: [api, web, changes]
+    if: github.event_name == 'push' && needs.changes.outputs.api == 'true'
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/deploy-api.yml
+    secrets: inherit
+
+  deploy-web:
+    name: Deploy Web
+    needs: [api, web, changes]
+    if: github.event_name == 'push' && needs.changes.outputs.web == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/deploy-web.yml
+    secrets: inherit

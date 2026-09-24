@@ -42,9 +42,9 @@ Registry of externally-visible resource/carrier names, kept in sync as new ones 
 
 | File | Triggers on |
 |---|---|
-| `.github/workflows/ci.yml` | pull request to `main` (no path filter), `workflow_dispatch`. Jobs: `api` (`API (build, format, image)`), `web` (`Web (build)`) — these job names are what branch protection would list as required checks |
-| `.github/workflows/deploy-api.yml` | push to `main`, `api/**` — verified green 2026-09-24 |
-| `.github/workflows/deploy-web.yml` | push to `main`, `web/**` — verified green 2026-09-24 (Wrangler pinned to 4); no PR previews (lost when the plan moved off Azure Static Web Apps; not replaced yet, see deploy-plan.md) |
+| `.github/workflows/ci.yml` | pull request to `main` (no path filter), push to `main`, `workflow_dispatch`. Jobs: `api` (`API (build, format, image)`), `web` (`Web (build)`), `changes` (push only), then `deploy-api` / `deploy-web` on push to `main` **only if both CI jobs pass** and that component changed. Job names are what branch protection would list as required checks (not available on this free private repo) |
+| `.github/workflows/deploy-api.yml` | `workflow_call` from `ci.yml` (gated) and `workflow_dispatch` (manual override, skips CI). Formerly push to `main` on `api/**`; concurrency group `deploy-api` |
+| `.github/workflows/deploy-web.yml` | `workflow_call` from `ci.yml` (gated) and `workflow_dispatch` (manual override, skips CI). Formerly push to `main` on `web/**`; concurrency group `deploy-web`. Wrangler pinned to 4; no PR previews (lost when the plan moved off Azure Static Web Apps; not replaced yet, see deploy-plan.md) |
 
 ## Known gotchas for future agents
 
