@@ -1,7 +1,7 @@
 ---
 project: BrokerPulse
 approved_at: 2026-09-23
-status: api_and_web_live; api_ci_verified; web_ci_failing
+status: api_and_web_live; api_ci_verified; web_ci_verified
 updated_at: 2026-09-24
 source: Plan Mode deploy (context/foundation/infrastructure.md + context/foundation/tech-stack.md)
 ---
@@ -54,7 +54,7 @@ Secrets approach for this first pass: Container Apps native secrets (not Key Vau
 ## CI/CD
 
 - `.github/workflows/deploy-api.yml` — triggers on push to `main`, `paths: api/**` (and the workflow file itself). OIDC `azure/login@v2` (no long-lived secret), `docker build`/push to `brokerpulseacr`, `az containerapp update --image ...`. **Verified end-to-end on 2026-09-24** (run `36046743163`, 1m16s): new revision `brokerpulse-api--0000002` took 100% traffic, `/health` → 200.
-- `.github/workflows/deploy-web.yml` — triggers on push to `main` only, `paths: web/**` (and the workflow file itself). Rewritten for Cloudflare: `npm ci` + `npm run build` + `cloudflare/wrangler-action@v3` (`command: deploy`). **Currently failing**, see Gaps below. (The original Azure Static Web Apps design with PR previews was dropped.)
+- `.github/workflows/deploy-web.yml` — triggers on push to `main` only, `paths: web/**` (and the workflow file itself). Rewritten for Cloudflare: `npm ci` + `npm run build` + `cloudflare/wrangler-action@v3` (`command: deploy`). **Verified green on 2026-09-24** (run `36048068040`, after the Wrangler 4 pin and the Cloudflare secrets); `https://brokerpulse-web.kamil1145.workers.dev/` → 200. (The original Azure Static Web Apps design with PR previews was dropped.)
 
 ### OIDC trust (created 2026-09-24)
 
@@ -72,7 +72,7 @@ Secrets approach for this first pass: Container Apps native secrets (not Key Vau
 
 - `az login` and Azure subscription selection.
 - Creating the Azure AD App Registration + OIDC federated credential trust for GitHub Actions, and scoping its role assignment (Contributor) to `brokerpulse-rg` only.
-- Adding `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_SUBSCRIPTION_ID` as GitHub Actions secrets (done 2026-09-24). The Static Web Apps token (`AZURE_STATIC_WEB_APPS_API_TOKEN`) is no longer needed; `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` replace it and are still pending.
+- Adding `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_SUBSCRIPTION_ID` as GitHub Actions secrets (done 2026-09-24). The Static Web Apps token (`AZURE_STATIC_WEB_APPS_API_TOKEN`) is no longer needed; `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` replace it (set 2026-09-24). The Cloudflare token is scoped to one account with only Workers Scripts: Edit and Account Settings: Read, and **expires 2026-12-01** — rotate it before then or `Deploy Web` will start failing on auth.
 - Recording the Postgres Flexible Server admin password somewhere durable (password manager).
 - Confirming Poland Central's per-service availability (ACA + Postgres Flexible Server + Blob) before the resource-group region is locked in.
 
@@ -96,10 +96,9 @@ Completed 2026-09-24 (CI wiring for the API):
 - [x] Commit `ad53d01` pushed to `main`; `Deploy API` run `36046743163` succeeded on re-run after fixing the federated-credential subject (first attempt: `AADSTS700213`)
 
 Not completed:
-- [ ] `Deploy Web` (run `36046743144`) **fails** — see Gaps
-- [ ] `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` GitHub secrets not set (not yet reached: the run failed earlier, on the wrangler version)
+- [x] `Deploy Web` green (run `36048068040`) after fixing the Wrangler version and setting `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`. The first token was pasted into chat by mistake and had to be rolled; the secret was first set with an empty value by a non-interactive `gh secret set` (see gotchas in `docs/reference/contract-surfaces.md`)
 - [ ] PR preview deploys for `web/` (lost when the plan moved off Azure Static Web Apps to Cloudflare; not replaced)
-- [ ] Rollback path not exercised. Revisions `--0000001` (`:initial`) and `--0000002` both exist, so it can be tested with `az containerapp ingress traffic set`
+- [x] Manual rollback exercised 2026-09-24: `az containerapp ingress traffic set -n brokerpulse-api -g brokerpulse-rg --revision-weight brokerpulse-api--0000002=100` moved 100% traffic to the previous revision, `/health` → 200 (after a cold start from `ScaledToZero`); rolled forward to `--0000003` the same way, `/health` → 200
 
 ## Verification
 
@@ -108,21 +107,21 @@ Not completed:
 - [x] `curl https://brokerpulse-web.kamil1145.workers.dev/` → 200, Astro template HTML
 - [x] `Deploy API` workflow green; revision `brokerpulse-api--0000002` (image tagged with commit SHA) at 100% traffic; `/health` → 200 (2026-09-24)
 - [ ] Static Web Apps PR preview — n/a, superseded by the Cloudflare decision above
-- [ ] `Deploy Web` workflow green — failing
-- [ ] Rollback exercise — not yet run
+- [x] `Deploy Web` workflow green; site → 200 (2026-09-24)
+- [x] Rollback exercise — run 2026-09-24 (see above)
 
 ## Gaps
 
 Ordered by how soon they bite.
 
-**Broken now**
-1. **`Deploy Web` fails with `Missing entry-point`.** `cloudflare/wrangler-action@v3` installs an old Wrangler 3.x by default, which does not understand an assets-only `web/wrangler.jsonc` (no `main`). `web/package.json` does not pin Wrangler. Fix applied: `wranglerVersion: "4"` on the action. **Pending verification in CI** (needs gap 2 first, since the run will then fail on auth until the Cloudflare secrets exist).
-2. **Cloudflare secrets are missing.** After gap 1, the next failure will be auth. Needs `CLOUDFLARE_API_TOKEN` (scoped to Workers edit on one account, set by the human, not pasted into chat) and `CLOUDFLARE_ACCOUNT_ID`.
+**Closed on 2026-09-24**
+1. ~~**`Deploy Web` fails with `Missing entry-point`.**~~ Cause: `cloudflare/wrangler-action@v3` installs an old Wrangler 3.x by default, which does not understand an assets-only `web/wrangler.jsonc` (no `main`). Fixed with `wranglerVersion: "4"` on the action; verified in CI.
+2. ~~**Cloudflare secrets missing.**~~ `CLOUDFLARE_API_TOKEN` (one account, Workers Scripts: Edit + Account Settings: Read, expires 2026-12-01) and `CLOUDFLARE_ACCOUNT_ID` are set; verified in CI. Follow-up: token rotation before 2026-12-01.
 
 **Pipeline has no safety net**
-3. **No post-deploy verification in `deploy-api.yml`.** The job ends after `az containerapp update`, so a broken image that starts but fails `/health` still shows a green run. Fix applied: a final `Verify /health` step resolves the app FQDN with `az containerapp show` and runs `curl --fail` with retries. **Pending verification in CI.** Note it checks the app's public FQDN, which in multi-revision mode serves the revision holding traffic, so it confirms the new revision only while it gets 100%.
-4. **No automatic rollback.** Multi-revision mode is on, but nothing shifts traffic back on failure, and the rollback command has never been run. Documented in `infrastructure.md` as the operating model; still untested.
-5. **No CI on pull requests.** Both workflows only run on push to `main`. There is no build/test/lint gate before merge, and `web/` PR previews were dropped with Static Web Apps.
+3. ~~**No post-deploy verification in `deploy-api.yml`.**~~ Fixed: a final `Verify /health` step resolves the app FQDN with `az containerapp show` and runs `curl --fail` with retries; verified green in run `36048068059`. Caveat: it checks the app's public FQDN, which in multi-revision mode serves the revision holding traffic, so it confirms the new revision only while it gets 100%.
+4. **Rollback is manual only.** The manual path is now tested (see Execution status): one `az containerapp ingress traffic set` command switches traffic in seconds, and revisions are kept. What is still missing is automation: nothing shifts traffic back when a new revision fails. Also note `Verify /health` runs after `az containerapp update` has already moved 100% traffic to the new revision, so a bad deploy is live until someone rolls back by hand. Safer variant: deploy with 0% traffic, verify the new revision's own FQDN, then shift traffic. A stale `--75nsd88` quickstart revision (`ActivationFailed`, 0% traffic) is left over from the initial creation and can be deactivated.
+5. **CI on pull requests — workflow added, pending first run on GitHub.** `.github/workflows/ci.yml` runs on every PR to `main` (no path filter, so its jobs can become required checks in gap 6): `api` = `dotnet build -warnaserror` (enforces the "don't suppress warnings" rule in `api/AGENTS.md`) + `dotnet format --verify-no-changes` + a `docker build` of `api/` without pushing (catches Dockerfile breakage before deploy); `web` = `npm ci` + `npm run build`. All of these were run locally against the current code and pass. **Remaining holes:** there are no tests in either component and no `astro check`/lint in `web/`, so CI only proves "it builds and is formatted", not "it works"; add `dotnet test` and a web test/type-check step as soon as the first real feature lands. `web/` PR preview deploys (dropped with Static Web Apps) are still not replaced. Branch protection that makes these checks mandatory is gap 6.
 6. **Deploys are not gated.** Anything merged to `main` that touches `api/**` goes straight to production. There is no GitHub Environment with required reviewers, and no branch protection configured (verify in repo settings).
 
 **Least-privilege posture**

@@ -35,20 +35,22 @@ Registry of externally-visible resource/carrier names, kept in sync as new ones 
 | `AZURE_CLIENT_ID` | set 2026-09-24 | appId of `brokerpulse-github`, for `deploy-api.yml` (identifier, not a secret credential) |
 | `AZURE_TENANT_ID` | set 2026-09-24 | Azure AD tenant, for `deploy-api.yml` |
 | `AZURE_SUBSCRIPTION_ID` | set 2026-09-24 | subscription, for `deploy-api.yml` |
-| `CLOUDFLARE_API_TOKEN` | **not set** | Deployment token for `deploy-web.yml` (`cloudflare/wrangler-action@v3`); a real secret, set it by hand, scope to Workers edit |
-| `CLOUDFLARE_ACCOUNT_ID` | **not set** | Account ID for `deploy-web.yml` |
+| `CLOUDFLARE_API_TOKEN` | set 2026-09-24, **expires 2026-12-01** | Deployment token for `deploy-web.yml` (`cloudflare/wrangler-action@v3`); a real secret, set it by hand. Scoped to one account: Workers Scripts: Edit + Account Settings: Read, no zones |
+| `CLOUDFLARE_ACCOUNT_ID` | set 2026-09-24 | Account ID for `deploy-web.yml` (identifier, not a credential) |
 
 ## CI/CD workflows
 
 | File | Triggers on |
 |---|---|
+| `.github/workflows/ci.yml` | pull request to `main` (no path filter), `workflow_dispatch`. Jobs: `api` (`API (build, format, image)`), `web` (`Web (build)`) — these job names are what branch protection would list as required checks |
 | `.github/workflows/deploy-api.yml` | push to `main`, `api/**` — verified green 2026-09-24 |
-| `.github/workflows/deploy-web.yml` | push to `main`, `web/**` — **currently failing** (old Wrangler, see gotchas); no PR previews (lost when the plan moved off Azure Static Web Apps; not replaced yet, see deploy-plan.md) |
+| `.github/workflows/deploy-web.yml` | push to `main`, `web/**` — verified green 2026-09-24 (Wrangler pinned to 4); no PR previews (lost when the plan moved off Azure Static Web Apps; not replaced yet, see deploy-plan.md) |
 
 ## Known gotchas for future agents
 
 - **GitHub OIDC subject can be in an immutable-ID format.** This repo has `use_immutable_subject: true` (check with `gh api repos/<owner>/<repo>/actions/oidc/customization/sub`), so tokens carry `repo:<owner>@<owner_id>/<repo>@<repo_id>:ref:...`, not `repo:<owner>/<repo>:ref:...`. A federated credential written in the plain form fails login with `AADSTS700213: No matching federated identity record found`. Copy the subject from the error message after verifying the IDs with `gh api repos/<owner>/<repo>`.
 - **`cloudflare/wrangler-action@v3` uses an old Wrangler 3.x unless told otherwise**, which fails on an assets-only `wrangler.jsonc` with `Missing entry-point`. Pin it with `wranglerVersion: "4"` or a devDependency.
+- **`gh secret set NAME` takes the secret's *name*, never its value.** Writing `gh secret set <token>` creates a secret called `<TOKEN>` (names are upper-cased and visible in repo settings), which leaks the value. If a secret was mis-named, delete it with `gh secret delete` and roll the credential. Also, without a real TTY (e.g. from the `!` prompt or an agent shell) `gh secret set NAME` with no `--body` reads an empty stdin and silently stores an **empty** secret — the failure only shows up later (`it's necessary to set a CLOUDFLARE_API_TOKEN environment variable`). Set real secrets from an interactive terminal or the GitHub web UI.
 - **Git Bash does not see `az`/`gh` installed via winget, and PowerShell tool calls do not keep PATH between invocations.** Refresh PATH from the Machine/User registry values at the start of each PowerShell call, or call `C:\Program Files\GitHub CLI\gh.exe` by full path. Never pass `$var` inside `powershell -Command "..."` from Git Bash: bash expands it first.
 
 - **`wrangler pages project create` auto-delegates to a Workers-based flow and, when run inside an Astro project directory, silently runs `astro add cloudflare`** — this installs `@astrojs/cloudflare`, adds an `adapter` to `astro.config.mjs`, adds Cloudflare KV (`SESSION`) and Images bindings, and rewrites `package.json`/`.gitignore`/`tsconfig.json`. None of that was requested for this project (`web/` is meant to stay static-output per `tech-stack.md`) and it was reverted. Deploy `web/` with a hand-written `wrangler.jsonc` (`assets.directory` pointing at `dist/`) and plain `wrangler deploy` instead of `wrangler pages project create` / `wrangler pages deploy`.
