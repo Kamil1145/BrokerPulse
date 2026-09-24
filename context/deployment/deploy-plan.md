@@ -98,7 +98,7 @@ Completed 2026-09-24 (CI wiring for the API):
 Not completed:
 - [x] `Deploy Web` green (run `36048068040`) after fixing the Wrangler version and setting `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`. The first token was pasted into chat by mistake and had to be rolled; the secret was first set with an empty value by a non-interactive `gh secret set` (see gotchas in `docs/reference/contract-surfaces.md`)
 - [ ] PR preview deploys for `web/` (lost when the plan moved off Azure Static Web Apps to Cloudflare; not replaced)
-- [ ] Rollback path not exercised. Revisions `--0000001` (`:initial`) and `--0000002` both exist, so it can be tested with `az containerapp ingress traffic set`
+- [x] Manual rollback exercised 2026-09-24: `az containerapp ingress traffic set -n brokerpulse-api -g brokerpulse-rg --revision-weight brokerpulse-api--0000002=100` moved 100% traffic to the previous revision, `/health` → 200 (after a cold start from `ScaledToZero`); rolled forward to `--0000003` the same way, `/health` → 200
 
 ## Verification
 
@@ -108,7 +108,7 @@ Not completed:
 - [x] `Deploy API` workflow green; revision `brokerpulse-api--0000002` (image tagged with commit SHA) at 100% traffic; `/health` → 200 (2026-09-24)
 - [ ] Static Web Apps PR preview — n/a, superseded by the Cloudflare decision above
 - [x] `Deploy Web` workflow green; site → 200 (2026-09-24)
-- [ ] Rollback exercise — not yet run
+- [x] Rollback exercise — run 2026-09-24 (see above)
 
 ## Gaps
 
@@ -120,7 +120,7 @@ Ordered by how soon they bite.
 
 **Pipeline has no safety net**
 3. ~~**No post-deploy verification in `deploy-api.yml`.**~~ Fixed: a final `Verify /health` step resolves the app FQDN with `az containerapp show` and runs `curl --fail` with retries; verified green in run `36048068059`. Caveat: it checks the app's public FQDN, which in multi-revision mode serves the revision holding traffic, so it confirms the new revision only while it gets 100%.
-4. **No automatic rollback.** Multi-revision mode is on, but nothing shifts traffic back on failure, and the rollback command has never been run. Documented in `infrastructure.md` as the operating model; still untested.
+4. **Rollback is manual only.** The manual path is now tested (see Execution status): one `az containerapp ingress traffic set` command switches traffic in seconds, and revisions are kept. What is still missing is automation: nothing shifts traffic back when a new revision fails. Also note `Verify /health` runs after `az containerapp update` has already moved 100% traffic to the new revision, so a bad deploy is live until someone rolls back by hand. Safer variant: deploy with 0% traffic, verify the new revision's own FQDN, then shift traffic. A stale `--75nsd88` quickstart revision (`ActivationFailed`, 0% traffic) is left over from the initial creation and can be deactivated.
 5. **No CI on pull requests.** Both workflows only run on push to `main`. There is no build/test/lint gate before merge, and `web/` PR previews were dropped with Static Web Apps.
 6. **Deploys are not gated.** Anything merged to `main` that touches `api/**` goes straight to production. There is no GitHub Environment with required reviewers, and no branch protection configured (verify in repo settings).
 
