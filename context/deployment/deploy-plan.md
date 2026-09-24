@@ -36,7 +36,7 @@ All resources in resource group `brokerpulse-rg`, region `polandcentral` (per `i
 | Container Registry | `brokerpulseacr` (unique-name-checked at creation) | Basic |
 | Container Apps environment | `brokerpulse-env` | Consumption |
 | Container App (API) | `brokerpulse-api` | Consumption, multi-revision mode enabled from creation |
-| Postgres Flexible Server | `brokerpulse-pg` (unique-name-checked) — actually created as `brokerpulse-pg-redacted`, see `docs/reference/contract-surfaces.md` | Burstable B1ms, free-tier eligible |
+| Postgres Flexible Server | `brokerpulse-pg` (unique-name-checked) — actually created under a different, suffixed name, see `docs/reference/contract-surfaces.md` | Burstable B1ms, free-tier eligible |
 | Storage account (Blob) | `brokerpulsest<suffix>` (unique-name-checked) — actually `brokerpulsest001` | Standard LRS, Hot tier |
 | ~~Static Web App~~ | ~~`brokerpulse-web`~~ — superseded, `web/` is on Cloudflare Workers Static Assets (see above) | — |
 
@@ -82,9 +82,9 @@ Completed:
 - [x] `api/Features/Health/HealthEndpoints.cs`, `api/Program.cs` (HTTPS redirect removed), `api/Dockerfile`, `api/.dockerignore`
 - [x] `.github/workflows/deploy-api.yml`, `.github/workflows/deploy-web.yml` (web workflow rewritten for Cloudflare, see above)
 - [x] `docs/reference/contract-surfaces.md`, this file
-- [x] Azure CLI and GitHub CLI installed (`winget`); `az login` completed (user `owner@example.invalid`, subscription "Azure subscription 1")
+- [x] Azure CLI and GitHub CLI installed (`winget`); `az login` completed (project owner's account, subscription "Azure subscription 1")
 - [x] Resource providers registered (`Microsoft.App`, `Microsoft.DBforPostgreSQL`, `Microsoft.Storage`, `Microsoft.ContainerRegistry`, `Microsoft.Web`, `Microsoft.OperationalInsights`) — none were registered by default on this fresh subscription
-- [x] `brokerpulse-rg` (polandcentral), `brokerpulseacr`, `brokerpulsest001` + `uploads` container, `brokerpulse-pg-redacted` (Postgres 16, Burstable B1ms) + Azure-services firewall rule, `brokerpulse-env` (Container Apps environment)
+- [x] `brokerpulse-rg` (polandcentral), `brokerpulseacr`, `brokerpulsest001` + `uploads` container, the Postgres Flexible Server (Postgres 16, Burstable B1ms) + Azure-services firewall rule, `brokerpulse-env` (Container Apps environment)
 - [x] API image built locally (Docker Desktop engine started manually; `az acr build`/ACR Tasks is blocked on this subscription — `TasksOperationsNotAllowed`, needs an Azure support request), smoke-tested locally, pushed to ACR
 - [x] `brokerpulse-api` Container App created: multi-revision mode, target port 8080, system-assigned managed identity for ACR pull (no static registry credentials), **live and verified**: `/health` → 200, `/weatherforecast` → placeholder JSON, both over the public HTTPS FQDN
 - [x] Postgres connection string stored as a Container Apps secret (`postgres-connection-string`) — not yet wired to an env var, since EF Core isn't in the project yet

@@ -10,7 +10,7 @@ Registry of externally-visible resource/carrier names, kept in sync as new ones 
 | Container Registry | `brokerpulseacr` | Basic tier; Azure AD auth mode (admin user disabled) |
 | Container Apps environment | `brokerpulse-env` | Consumption plan; default domain `bravemoss-b9c75002.polandcentral.azurecontainerapps.io`; auto-created Log Analytics workspace `workspace-brokerpulsergDyLT` |
 | Container App (API) | `brokerpulse-api` | Multi-revision mode; target port `8080`; system-assigned managed identity for ACR pull (no static registry credentials); live at `https://brokerpulse-api.bravemoss-b9c75002.polandcentral.azurecontainerapps.io` |
-| Postgres Flexible Server | `brokerpulse-pg-redacted` | Burstable B1ms, Postgres 16; **not** `brokerpulse-pg` — that name is DNS-reserved after an earlier misconfigured (no-public-access) server was deleted and recreated under this name; admin user `pgadmin-redacted`, password in a password manager (not in the repo) |
+| Postgres Flexible Server | `brokerpulse-pg` + a numeric suffix (**not** the bare name — it is DNS-reserved after an earlier misconfigured server was deleted and recreated under a suffixed name) | Burstable B1ms, Postgres 16. The exact server name and admin login are deliberately **not** recorded in this public repo; get them with `az postgres flexible-server list -g brokerpulse-rg`. Password in a password manager |
 | Storage account (Blob) | `brokerpulsest001` | Standard LRS, Hot tier; container `uploads` for voice recordings/photos |
 
 ### Frontend hosting: Cloudflare, not Azure
@@ -19,7 +19,7 @@ Registry of externally-visible resource/carrier names, kept in sync as new ones 
 
 | Resource | Name | Notes |
 |---|---|---|
-| Cloudflare Worker (static assets) | `brokerpulse-web` | Account: `owner@example.invalid`'s Account (`5cd335be976562a109dce70eaf9d43a9`); live at `https://brokerpulse-web.kamil1145.workers.dev`; config in `web/wrangler.jsonc` |
+| Cloudflare Worker (static assets) | `brokerpulse-web` | Account ID `5cd335be976562a109dce70eaf9d43a9` (an identifier, not a credential); live at `https://brokerpulse-web.kamil1145.workers.dev`; config in `web/wrangler.jsonc` |
 
 ## Azure AD (GitHub Actions identity)
 
