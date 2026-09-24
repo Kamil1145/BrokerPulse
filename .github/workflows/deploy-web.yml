@@ -1,11 +1,17 @@
 name: Deploy Web
 
+# Called from ci.yml only after the CI jobs pass on main. workflow_dispatch is a
+# deliberate manual override (redeploy without CI); it needs write access to the repo.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "web/**"
-      - ".github/workflows/deploy-web.yml"
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false
 
 jobs:
   deploy:
