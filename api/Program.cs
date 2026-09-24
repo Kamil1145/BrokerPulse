@@ -14,7 +14,8 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+// No UseHttpsRedirection(): Azure Container Apps ingress terminates TLS and forwards
+// plain HTTP to this container's target port, so redirecting here loops.
 
 app.MapEndpointGroups();
 

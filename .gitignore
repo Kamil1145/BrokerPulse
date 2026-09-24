@@ -9,6 +9,9 @@ node_modules/
 web/dist/
 web/.astro/
 
+# Wrangler (Cloudflare CLI) local cache/auth
+.wrangler/
+
 # Secrets and local config
 .env
 .env.*
