@@ -116,6 +116,20 @@ Not completed:
 - A force-push alone did not remove the old data, because GitHub keeps pre-rewrite commits reachable by SHA and through merged PRs. The public repository was therefore **recreated** from the clean history: new repo ID `1386369400`, so the OIDC federated-credential subject and all Actions secrets were redone (see "OIDC trust" above). Old Actions runs and PR discussions did not carry over; the decisions they contained are recorded in this file.
 - The new repo is public, with secret scanning, push protection and branch protection on `main` (required checks `API (build, format, image)` and `Web (build)`, PR required with 0 approvals, no force-push or deletion; admins are not enforced, so the owner can bypass in an emergency).
 
+## Next session: resume here
+
+State on 2026-09-24: API (Azure Container Apps) and web (Cloudflare Workers) deploy from a public repo through a gated CI pipeline; `main` is protected (PR + required checks). Gaps 1–6 below are closed or narrowed. Open work, in the order to tackle it:
+
+1. **Least privilege (gap 7).** Replace the `Contributor` role of `brokerpulse-github` on `brokerpulse-rg` with narrower ones: `AcrPush` on the registry and a Container Apps role on `brokerpulse-api` only. Then re-run the pipeline to confirm push, `az containerapp update` and `Verify /health` still work.
+2. **Postgres access model, before EF Core (gaps 9, 10).** Pick one: VNet-integrated Container Apps environment + private access for Postgres, or Entra ID auth with the app's managed identity over a private path. Public access is currently `Enabled` with only the owner's IP allowed, so the API cannot reach the database yet. Also check backup retention/point-in-time restore and decide how EF migrations run on deploy.
+3. **Human approval before production.** Now possible on the public repo: a `production` GitHub Environment with a required reviewer, used by the deploy jobs.
+4. **Safer deploy (gap 4).** Deploy the new revision with 0% traffic, verify its own FQDN, then shift traffic (and shift back automatically on failure). Today `Verify /health` runs after traffic has already moved.
+5. **Tests (gap 5).** CI only proves the code builds and is formatted. Add `dotnet test` and a web test / `astro check` step with the first real feature.
+6. **Observability (gap 12).** Alerts on failed revisions, 5xx and restarts; uptime check on `/health`.
+7. **Housekeeping.** Rotate the Cloudflare token before **2026-12-01**. Bump actions off Node 20 and pin them to SHAs. Clean old images in ACR. `web/` PR previews. CORS for the browser-to-API calls. Key Vault for secrets. IaC for the Azure resources. Decide the fate of the private archive `BrokerPulse-old` (contains the pre-rewrite history).
+
+After 1–3, build the MVP per `context/foundation/prd.md`: Accounts & Access (EF Core + Postgres, wire `postgres-connection-string`) → Listings → voice-note upload to Blob and transcription → offer matching → real UI in `web/`. Each feature is its own slice under `api/Features/`.
+
 ## Gaps
 
 Ordered by how soon they bite.
