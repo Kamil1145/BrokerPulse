@@ -26,7 +26,7 @@ Registry of externally-visible resource/carrier names, kept in sync as new ones 
 | Resource | Name | Notes |
 |---|---|---|
 | App Registration + service principal | `brokerpulse-github` | appId `f31864fb-59fa-45cb-be72-ca46bd9ce67a`; role **Contributor** on `brokerpulse-rg` only |
-| Federated credential | `github-main` | issuer `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`, subject `repo:Kamil1145@46505054/BrokerPulse@1380481705:ref:refs/heads/main` — the **immutable-ID** subject form, see gotchas |
+| Federated credential | `github-main` | issuer `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`, subject `repo:Kamil1145@46505054/BrokerPulse@1386369400:ref:refs/heads/main` — the **immutable-ID** subject form, see gotchas |
 
 ## GitHub Actions secrets
 
