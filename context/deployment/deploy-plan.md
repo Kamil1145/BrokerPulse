@@ -121,14 +121,36 @@ Not completed:
 State on 2026-09-24: API (Azure Container Apps) and web (Cloudflare Workers) deploy from a public repo through a gated CI pipeline; `main` is protected (PR + required checks). Gaps 1–6 below are closed or narrowed. Open work, in the order to tackle it:
 
 1. ~~**Least privilege (gap 7).**~~ Done 2026-09-25, see "OIDC trust" above.
-2. **Postgres access model, before EF Core (gaps 9, 10).** Pick one: VNet-integrated Container Apps environment + private access for Postgres, or Entra ID auth with the app's managed identity over a private path. Public access is currently `Enabled` with only the owner's IP allowed, so the API cannot reach the database yet. Also check backup retention/point-in-time restore and decide how EF migrations run on deploy. **Also required before EF Core:** `/health` must check dependencies (readiness), otherwise a revision that cannot reach the database still passes verification and gets traffic; and EF migrations must be backward compatible, because the previous revision stays live while the new one starts and a rollback returns to the post-migration schema (destructive schema changes need two releases).
+2. ~~**Postgres access model, before EF Core (gaps 9, 10).**~~ Decided and configured 2026-09-25, see "Postgres access model" below. Still open from it: EF Core code with token auth, a migration role for the pipeline, dependency-aware `/health`, backward-compatible migrations, a backup/point-in-time-restore test.
 3. **Human approval before production.** Now possible on the public repo: a `production` GitHub Environment with a required reviewer, used by the deploy jobs.
-4. ~~**Safer deploy (gap 4).**~~ Done 2026-09-25: verify-then-shift in `deploy-api.yml`. The first real test happens on the first deploy that produces a new revision.
+4. ~~**Safer deploy (gap 4).**~~ Done 2026-09-25: verify-then-shift in `deploy-api.yml`. Verified on the first real deploy (2026-09-25, revision `--0000007`: created at 0%, health-checked on its own FQDN, then 100%; the image matched the merge commit; older revisions were deactivated).
 5. **Tests (gap 5).** CI only proves the code builds and is formatted. Add `dotnet test` and a web test / `astro check` step with the first real feature.
 6. **Observability (gap 12).** Alerts on failed revisions, 5xx and restarts; uptime check on `/health`.
 7. **Housekeeping.** Rotate the Cloudflare token before **2026-12-01**. Bump actions off Node 20 and pin them to SHAs. Clean old images in ACR. `web/` PR previews. CORS for the browser-to-API calls. Key Vault for secrets. IaC for the Azure resources. Decide the fate of the private archive `BrokerPulse-old` (contains the pre-rewrite history).
 
 After 1–3, build the MVP per `context/foundation/prd.md`: Accounts & Access (EF Core + Postgres, wire `postgres-connection-string`) → Listings → voice-note upload to Blob and transcription → offer matching → real UI in `web/`. Each feature is its own slice under `api/Features/`.
+
+## Postgres access model (decided and configured 2026-09-25)
+
+**Decision:** Microsoft Entra authentication over the public endpoint. There are no database passwords anywhere (repo, GitHub secrets, Container Apps secrets).
+
+Considered and not chosen: VNet-integrated Container Apps environment plus a Postgres server with private access (best isolation, but both the environment and the server would have to be recreated, and migrations from GitHub Actions or a laptop then need a self-hosted runner, a Container Apps Job or a jumpbox; revisit before real customer data, a compliance requirement, or scale). Password auth plus an IP allowlist was rejected: the Consumption environment shares about 160 outbound addresses that can change.
+
+**Configuration:**
+- Server: Entra authentication `Enabled`, password authentication `Disabled` (the original password admin can no longer log in). An Entra administrator (the project owner, type `User`) is set. Public network access stays `Enabled`.
+- Firewall: the owner's client IP plus the `0.0.0.0` "Azure services" rule. Because password login is off, an attacker on any Azure address still needs an Entra token issued for a principal of this tenant.
+- Database `brokerpulse`. Role `brokerpulse-api` is the app's system-assigned managed identity (created with `pgaadauth_create_principal_with_oid`): not a superuser, no `CREATEDB`/`CREATEROLE`, `CONNECT` on `brokerpulse`, `USAGE` on schema `public`, no `CREATE`. Verified with `pg_roles` and `has_*_privilege`.
+- The `postgres-connection-string` Container Apps secret was removed; no app setting references a database password.
+
+**Residual risk:** the endpoint is reachable from the internet at the network level, so a pre-authentication vulnerability in Postgres itself is the remaining exposure. Accepted for the MVP; see the revisit triggers above.
+
+**To wire the app (not done yet):**
+- Connection string without a password: `Host=<server>.postgres.database.azure.com;Database=brokerpulse;Username=brokerpulse-api;SSL Mode=Require` (an app setting, not a secret).
+- Token via `Azure.Identity` `DefaultAzureCredential` for scope `https://ossrdbms-aad.database.windows.net/.default`, supplied to Npgsql with `UsePeriodicPasswordProvider`. The same code works locally after `az login`.
+- Migrations: create an Entra principal for the pipeline identity `brokerpulse-github` with DDL rights, get its token in CI with `az account get-access-token --resource-type oss-rdbms`, and set default privileges so `brokerpulse-api` gets DML on tables that role creates. The app role deliberately cannot change the schema.
+- The system-assigned identity is tied to the app: if the app is recreated, the database role must be recreated (or move to a user-assigned identity).
+
+**Running SQL as the Entra admin** without installing `psql` (token in an environment variable, never on the command line): set `PGPASSWORD` to the output of `az account get-access-token --resource-type oss-rdbms --query accessToken -o tsv`, then `docker run --rm -e PGPASSWORD postgres:16 psql "host=<server>.postgres.database.azure.com dbname=brokerpulse user='<entra admin upn>' sslmode=require" -c "<sql>"`. Your machine's IP must be in the firewall.
 
 ## Automation: what runs by itself, what stays manual
 
@@ -179,7 +201,7 @@ Ordered by how soon they bite.
 8. **Actions are pinned to major tags (`@v4`, `@v2`, `@v3`), not SHAs**, and GitHub warns that Node 20 actions are being forced to Node 24 (`actions/checkout@v4`, `azure/login@v2`). Low risk for MVP, worth bumping.
 
 **Data and secrets**
-9. **Postgres secret is not wired to the app.** `postgres-connection-string` exists as a Container Apps secret but no env var references it; EF Core is not in the project yet. **Firewall (changed 2026-09-24):** the `0.0.0.0` "Azure services" rule was **removed** before the repo went public, because it admitted any Azure tenant's traffic; only the owner's client-IP rule remains, so the API cannot reach Postgres yet. Whitelisting the app's outbound IPs is not viable: the Consumption environment has ~160 shared outbound addresses that can change. **Before wiring EF Core, choose a real access model**: a VNet-integrated Container Apps environment with Postgres private access, or Entra ID authentication with the app's managed identity plus a private path. Public access on the server is still `Enabled`.
+9. **Postgres secret is not wired to the app.** `postgres-connection-string` exists as a Container Apps secret but no env var references it; EF Core is not in the project yet. **Firewall (changed 2026-09-24):** the `0.0.0.0` "Azure services" rule was **removed** before the repo went public, because it admitted any Azure tenant's traffic; only the owner's client-IP rule remains, so the API cannot reach Postgres yet. Whitelisting the app's outbound IPs is not viable: the Consumption environment has ~160 shared outbound addresses that can change. **Before wiring EF Core, choose a real access model**: a VNet-integrated Container Apps environment with Postgres private access, or Entra ID authentication with the app's managed identity plus a private path. Public access on the server is still `Enabled`. **Update 2026-09-25:** superseded by the Entra model in "Postgres access model": password authentication is disabled, the `0.0.0.0` Azure-services rule was restored (safe now, because a login needs an Entra token from this tenant), and the `postgres-connection-string` secret was removed from the app.
 10. **No backup/restore or migration story.** Nothing yet runs EF migrations on deploy; Postgres Burstable backup retention and point-in-time restore have not been checked or tested.
 11. **Secrets live as Container Apps native secrets, not Key Vault.** Accepted for the first pass in this plan; Key Vault is still the hardening step.
 
