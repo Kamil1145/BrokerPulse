@@ -53,13 +53,13 @@ Secrets approach for this first pass: Container Apps native secrets (not Key Vau
 
 ## CI/CD
 
-- `.github/workflows/deploy-api.yml` — triggers on push to `main`, `paths: api/**` (and the workflow file itself). OIDC `azure/login@v2` (no long-lived secret), `docker build`/push to `brokerpulseacr`, `az containerapp update --image ...`. **Verified end-to-end on 2026-09-24** (first successful run, 1m16s; the run itself was later deleted because its log printed the full app JSON incl. the owner's e-mail): new revision `brokerpulse-api--0000002` took 100% traffic, `/health` → 200.
+- `.github/workflows/deploy-api.yml` — called from `ci.yml` after both CI jobs pass (also `workflow_dispatch`). OIDC `azure/login@v2` (no long-lived secret), `docker build`/push to `brokerpulseacr`, then a **verify-then-shift** flow (since 2026-09-25): `az containerapp update` creates the new revision with 0% traffic (traffic is pinned to one revision, so new revisions start at 0%); a guard checks that the revision runs the image just built; `/health` is checked on the new revision's own FQDN (the retry window covers the ~25 s cold start); only then `az containerapp ingress traffic set --revision-weight <new>=100`; then the public `/health` is checked again, revisions beyond the newest 5 are deactivated (best effort) and, on failure, traffic/revision/log diagnostics are printed. A failed verification leaves production on the previous revision.
 - `.github/workflows/deploy-web.yml` — triggers on push to `main` only, `paths: web/**` (and the workflow file itself). Rewritten for Cloudflare: `npm ci` + `npm run build` + `cloudflare/wrangler-action@v3` (`command: deploy`). **Verified green on 2026-09-24** (run `36048068040`, after the Wrangler 4 pin and the Cloudflare secrets); `https://brokerpulse-web.kamil1145.workers.dev/` → 200. (The original Azure Static Web Apps design with PR previews was dropped.)
 
 ### OIDC trust (created 2026-09-24)
 
 - Azure AD App Registration `brokerpulse-github` (appId `f31864fb-59fa-45cb-be72-ca46bd9ce67a`) + service principal.
-- Role: **Contributor**, scoped to `brokerpulse-rg` only (not the subscription).
+- Roles (narrowed on 2026-09-25, replacing **Contributor** on `brokerpulse-rg`): `AcrPush` on `brokerpulseacr`; `Container Apps Contributor` on the app `brokerpulse-api`; `Container Apps Contributor` on the environment `brokerpulse-env` (`az containerapp update` needs `managedEnvironments/join/action` on the environment, which a role on the app alone does not give). The identity can no longer touch Postgres, Blob or anything else in `brokerpulse-rg`. Verified by a full `Deploy API` run after Contributor was removed.
 - Federated credential `github-main`, issuer `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`, subject `repo:Kamil1145@46505054/BrokerPulse@1386369400:ref:refs/heads/main`. **The subject uses GitHub's immutable-ID format** (`owner@<id>/repo@<id>`), because the repo has `use_immutable_subject: true`. The first attempt used the plain `repo:Kamil1145/BrokerPulse:...` form and failed with `AADSTS700213`.
 - Only `main` may log in; PR branches and forks cannot.
 
@@ -71,7 +71,7 @@ Secrets approach for this first pass: Container Apps native secrets (not Key Vau
 ## Manual gates (human-only, not agent-automated)
 
 - `az login` and Azure subscription selection.
-- Creating the Azure AD App Registration + OIDC federated credential trust for GitHub Actions, and scoping its role assignment (Contributor) to `brokerpulse-rg` only.
+- Creating the Azure AD App Registration + OIDC federated credential trust for GitHub Actions, and scoping its role assignments to the three resources listed under "OIDC trust" (originally Contributor on `brokerpulse-rg`, narrowed on 2026-09-25).
 - Adding `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_SUBSCRIPTION_ID` as GitHub Actions secrets (done 2026-09-24). The Static Web Apps token (`AZURE_STATIC_WEB_APPS_API_TOKEN`) is no longer needed; `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` replace it (set 2026-09-24). The Cloudflare token is scoped to one account with only Workers Scripts: Edit and Account Settings: Read, and **expires 2026-12-01** — rotate it before then or `Deploy Web` will start failing on auth.
 - Recording the Postgres Flexible Server admin password somewhere durable (password manager).
 - Confirming Poland Central's per-service availability (ACA + Postgres Flexible Server + Blob) before the resource-group region is locked in.
@@ -91,14 +91,14 @@ Completed:
 - [x] `web/` built and deployed to Cloudflare (Workers Static Assets) — **live and verified**: `https://brokerpulse-web.kamil1145.workers.dev` returns 200 and the Astro template HTML
 
 Completed 2026-09-24 (CI wiring for the API):
-- [x] App Registration `brokerpulse-github`, service principal, Contributor on `brokerpulse-rg`, federated credential `github-main` (see "OIDC trust" above)
+- [x] App Registration `brokerpulse-github`, service principal, Contributor on `brokerpulse-rg` (replaced by narrow roles on 2026-09-25), federated credential `github-main` (see "OIDC trust" above)
 - [x] GitHub secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` set on `Kamil1145/BrokerPulse`
 - [x] First commit pushed to `main`; the `Deploy API` run succeeded on re-run after fixing the federated-credential subject (first attempt: `AADSTS700213`)
 
 Not completed:
 - [x] `Deploy Web` green (run `36048068040`) after fixing the Wrangler version and setting `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`. The first token was pasted into chat by mistake and had to be rolled; the secret was first set with an empty value by a non-interactive `gh secret set` (see gotchas in `docs/reference/contract-surfaces.md`)
 - [ ] PR preview deploys for `web/` (lost when the plan moved off Azure Static Web Apps to Cloudflare; not replaced)
-- [x] Manual rollback exercised 2026-09-24: `az containerapp ingress traffic set -n brokerpulse-api -g brokerpulse-rg --revision-weight brokerpulse-api--0000002=100` moved 100% traffic to the previous revision, `/health` → 200 (after a cold start from `ScaledToZero`); rolled forward to `--0000003` the same way, `/health` → 200
+- [x] Manual rollback exercised 2026-09-24: `az containerapp ingress traffic set -n brokerpulse-api -g brokerpulse-rg --revision-weight brokerpulse-api--0000002=100` moved 100% traffic to the previous revision, `/health` → 200 (after a cold start from `ScaledToZero`); rolled forward to `--0000003` the same way, `/health` → 200 **Correction found 2026-09-25:** the roll-forward pinned traffic to `--0000003` instead of `latest=100`, so deploys made afterwards (revisions `--0000004` to `--0000006`) received 0% traffic while `Verify /health` kept passing against the old revision. Fixed by the verify-then-shift flow. Lesson: a manual `traffic set` leaves traffic pinned, and the pipeline now sets traffic explicitly on every deploy.
 
 ## Verification
 
@@ -120,15 +120,45 @@ Not completed:
 
 State on 2026-09-24: API (Azure Container Apps) and web (Cloudflare Workers) deploy from a public repo through a gated CI pipeline; `main` is protected (PR + required checks). Gaps 1–6 below are closed or narrowed. Open work, in the order to tackle it:
 
-1. **Least privilege (gap 7).** Replace the `Contributor` role of `brokerpulse-github` on `brokerpulse-rg` with narrower ones: `AcrPush` on the registry and a Container Apps role on `brokerpulse-api` only. Then re-run the pipeline to confirm push, `az containerapp update` and `Verify /health` still work.
-2. **Postgres access model, before EF Core (gaps 9, 10).** Pick one: VNet-integrated Container Apps environment + private access for Postgres, or Entra ID auth with the app's managed identity over a private path. Public access is currently `Enabled` with only the owner's IP allowed, so the API cannot reach the database yet. Also check backup retention/point-in-time restore and decide how EF migrations run on deploy.
+1. ~~**Least privilege (gap 7).**~~ Done 2026-09-25, see "OIDC trust" above.
+2. **Postgres access model, before EF Core (gaps 9, 10).** Pick one: VNet-integrated Container Apps environment + private access for Postgres, or Entra ID auth with the app's managed identity over a private path. Public access is currently `Enabled` with only the owner's IP allowed, so the API cannot reach the database yet. Also check backup retention/point-in-time restore and decide how EF migrations run on deploy. **Also required before EF Core:** `/health` must check dependencies (readiness), otherwise a revision that cannot reach the database still passes verification and gets traffic; and EF migrations must be backward compatible, because the previous revision stays live while the new one starts and a rollback returns to the post-migration schema (destructive schema changes need two releases).
 3. **Human approval before production.** Now possible on the public repo: a `production` GitHub Environment with a required reviewer, used by the deploy jobs.
-4. **Safer deploy (gap 4).** Deploy the new revision with 0% traffic, verify its own FQDN, then shift traffic (and shift back automatically on failure). Today `Verify /health` runs after traffic has already moved.
+4. ~~**Safer deploy (gap 4).**~~ Done 2026-09-25: verify-then-shift in `deploy-api.yml`. The first real test happens on the first deploy that produces a new revision.
 5. **Tests (gap 5).** CI only proves the code builds and is formatted. Add `dotnet test` and a web test / `astro check` step with the first real feature.
 6. **Observability (gap 12).** Alerts on failed revisions, 5xx and restarts; uptime check on `/health`.
 7. **Housekeeping.** Rotate the Cloudflare token before **2026-12-01**. Bump actions off Node 20 and pin them to SHAs. Clean old images in ACR. `web/` PR previews. CORS for the browser-to-API calls. Key Vault for secrets. IaC for the Azure resources. Decide the fate of the private archive `BrokerPulse-old` (contains the pre-rewrite history).
 
 After 1–3, build the MVP per `context/foundation/prd.md`: Accounts & Access (EF Core + Postgres, wire `postgres-connection-string`) → Listings → voice-note upload to Blob and transcription → offer matching → real UI in `web/`. Each feature is its own slice under `api/Features/`.
+
+## Automation: what runs by itself, what stays manual
+
+**Runs without a human** (the goal is to keep this list growing):
+- CI on every PR (build with warnings as errors, format check, container image build, web build).
+- Deploy on merge to `main`, only for the component whose files changed, only after CI is green.
+- Verify-then-shift for the API: new revision at 0% traffic, health check on its own FQDN, traffic shift, public health check, cleanup of revisions beyond the newest 5, diagnostics printed on failure.
+- Secret scanning and push protection on the repo.
+
+**Manual by design** (each has a reason, do not automate away):
+- Permission grants: role assignments, federated credentials, firewall rules. The auto-mode classifier blocks these for agents, and a human should approve any widening of access.
+- Destructive Azure operations (deleting a server, storage account, resource group).
+- Real secrets (for example the Cloudflare token): set in the GitHub web UI, never through a shell or chat.
+- Merging PRs into `main` (protected; 0 required approvals only because this is a single-owner repo).
+
+**Candidates to automate next** (in rough order of value per effort):
+1. Dependabot for GitHub Actions, NuGet and npm, which also removes the Node 20 deprecation warnings and can pin actions to SHAs.
+2. A scheduled workflow that opens an issue 30 days before the Cloudflare token expires (2026-12-01) and on any failed scheduled `/health` check (uptime).
+3. Azure alerts on failed revisions and 5xx, wired to the same issue channel.
+4. Infrastructure as code (Bicep) with a `what-if` step on PRs, so resource changes are reviewed like code instead of run by hand.
+5. Web PR previews (`wrangler versions upload` plus a PR comment).
+6. Automatic post-shift rollback if the public health check fails after traffic has moved (today the job just fails and diagnostics are printed).
+7. Auto-merge for Dependabot PRs once required checks are green.
+
+**Agent runbook** (read-only unless stated; on this Windows machine use full paths or refresh PATH, see the project memory):
+- Status: `az containerapp revision list -n brokerpulse-api -g brokerpulse-rg --query "[].[name, properties.trafficWeight, properties.healthState, properties.createdTime]" -o tsv`
+- Which revision serves traffic: `az containerapp ingress traffic show -n brokerpulse-api -g brokerpulse-rg`
+- Health of one revision: `curl --fail https://<revision-fqdn>/health` (FQDN from `az containerapp revision show ... --query properties.fqdn`)
+- Rollback (changes production, ask first): `az containerapp ingress traffic set -n brokerpulse-api -g brokerpulse-rg --revision-weight <previous-revision>=100`; not sticky, see gap 4.
+- Redeploy without CI (manual override, skips checks): `gh workflow run deploy-api.yml --ref main`.
 
 ## Gaps
 
@@ -139,13 +169,13 @@ Ordered by how soon they bite.
 2. ~~**Cloudflare secrets missing.**~~ `CLOUDFLARE_API_TOKEN` (one account, Workers Scripts: Edit + Account Settings: Read, expires 2026-12-01) and `CLOUDFLARE_ACCOUNT_ID` are set; verified in CI. Follow-up: token rotation before 2026-12-01.
 
 **Pipeline has no safety net**
-3. ~~**No post-deploy verification in `deploy-api.yml`.**~~ Fixed: a final `Verify /health` step resolves the app FQDN with `az containerapp show` and runs `curl --fail` with retries; verified green on 2026-09-24 (and again on the post-history-rewrite run). Caveat: it checks the app's public FQDN, which in multi-revision mode serves the revision holding traffic, so it confirms the new revision only while it gets 100%.
-4. **Rollback is manual only.** The manual path is now tested (see Execution status): one `az containerapp ingress traffic set` command switches traffic in seconds, and revisions are kept. What is still missing is automation: nothing shifts traffic back when a new revision fails. Also note `Verify /health` runs after `az containerapp update` has already moved 100% traffic to the new revision, so a bad deploy is live until someone rolls back by hand. Safer variant: deploy with 0% traffic, verify the new revision's own FQDN, then shift traffic. A stale `--75nsd88` quickstart revision (`ActivationFailed`, 0% traffic) is left over from the initial creation and can be deactivated.
+3. ~~**No post-deploy verification in `deploy-api.yml`.**~~ Fixed: a final `Verify /health` step resolves the app FQDN with `az containerapp show` and runs `curl --fail` with retries; verified green on 2026-09-24 (and again on the post-history-rewrite run). Superseded on 2026-09-25: this check was hollow after the rollback exercise (see the correction in Execution status). It now runs against the new revision's own FQDN before traffic moves (see gap 4).
+4. ~~**Rollback is manual only.**~~ Closed 2026-09-25 for the deploy path: a new revision is verified on its own FQDN before it gets traffic, and a failed verification leaves production on the previous revision, so a bad deploy needs no rollback. A manual rollback after a regression is still one command, `az containerapp ingress traffic set --revision-weight <old-revision>=100`, but it is **not sticky**: the next deploy shifts traffic to its new revision again, so a lasting rollback needs `git revert` (or holding deploys). Only the newest 5 revisions are kept active. Remaining: nothing rolls back automatically after traffic has shifted (a regression that only shows up under real load).
 5. **CI on pull requests — workflow added, pending first run on GitHub.** `.github/workflows/ci.yml` runs on every PR to `main` (no path filter, so its jobs can become required checks in gap 6): `api` = `dotnet build -warnaserror` (enforces the "don't suppress warnings" rule in `api/AGENTS.md`) + `dotnet format --verify-no-changes` + a `docker build` of `api/` without pushing (catches Dockerfile breakage before deploy); `web` = `npm ci` + `npm run build`. All of these were run locally against the current code and pass. **Remaining holes:** there are no tests in either component and no `astro check`/lint in `web/`, so CI only proves "it builds and is formatted", not "it works"; add `dotnet test` and a web test/type-check step as soon as the first real feature lands. `web/` PR preview deploys (dropped with Static Web Apps) are still not replaced. Branch protection that makes these checks mandatory is gap 6.
 6. ~~**Deploys are not gated.**~~ **Closed on 2026-09-24 (two layers).** (a) `ci.yml` gate: deploys run only after both CI jobs pass and only for the component whose files changed (`changes` job; unknown `before` deploys both). (b) The repo was made public, which unlocked **branch protection on `main`**: required checks `API (build, format, image)` and `Web (build)`, PR required (0 approvals, single-owner repo), no force-push, no branch deletion; `enforce_admins` is off so the owner can bypass in an emergency. Still open: no human approval before production (a GitHub Environment with a required reviewer would add one), and `workflow_dispatch` on the deploy workflows remains a deliberate manual override that skips CI.
 
 **Least-privilege posture**
-7. **Contributor on the resource group is broader than the pipeline needs.** The pipeline only pushes an image and updates one Container App, but the identity could also delete Postgres or the storage account in `brokerpulse-rg`. That conflicts with the "destructive actions are human-only" stance in `CLAUDE.md`. Options: a custom role limited to `Microsoft.App/containerApps/*` + ACR push, or resource-level assignments (AcrPush on the registry, Container Apps Contributor on the app).
+7. ~~**Contributor on the resource group is broader than the pipeline needs.**~~ Closed 2026-09-25: replaced by `AcrPush` on the registry plus `Container Apps Contributor` on the app and its environment; a full pipeline run passed without Contributor.
 8. **Actions are pinned to major tags (`@v4`, `@v2`, `@v3`), not SHAs**, and GitHub warns that Node 20 actions are being forced to Node 24 (`actions/checkout@v4`, `azure/login@v2`). Low risk for MVP, worth bumping.
 
 **Data and secrets**

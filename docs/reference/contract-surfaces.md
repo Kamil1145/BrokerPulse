@@ -25,7 +25,7 @@ Registry of externally-visible resource/carrier names, kept in sync as new ones 
 
 | Resource | Name | Notes |
 |---|---|---|
-| App Registration + service principal | `brokerpulse-github` | appId `f31864fb-59fa-45cb-be72-ca46bd9ce67a`; role **Contributor** on `brokerpulse-rg` only |
+| App Registration + service principal | `brokerpulse-github` | appId `f31864fb-59fa-45cb-be72-ca46bd9ce67a`; roles (since 2026-09-25): `AcrPush` on `brokerpulseacr`, `Container Apps Contributor` on `brokerpulse-api` and on `brokerpulse-env`; no role on the resource group |
 | Federated credential | `github-main` | issuer `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`, subject `repo:Kamil1145@46505054/BrokerPulse@1386369400:ref:refs/heads/main` — the **immutable-ID** subject form, see gotchas |
 
 ## GitHub Actions secrets
@@ -43,10 +43,12 @@ Registry of externally-visible resource/carrier names, kept in sync as new ones 
 | File | Triggers on |
 |---|---|
 | `.github/workflows/ci.yml` | pull request to `main` (no path filter), push to `main`, `workflow_dispatch`. Jobs: `api` (`API (build, format, image)`), `web` (`Web (build)`), `changes` (push only), then `deploy-api` / `deploy-web` on push to `main` **only if both CI jobs pass** and that component changed. Job names are what branch protection would list as required checks (not available on this free private repo) |
-| `.github/workflows/deploy-api.yml` | `workflow_call` from `ci.yml` (gated) and `workflow_dispatch` (manual override, skips CI). Formerly push to `main` on `api/**`; concurrency group `deploy-api` |
+| `.github/workflows/deploy-api.yml` | `workflow_call` from `ci.yml` (gated) and `workflow_dispatch` (manual override, skips CI). Verify-then-shift: new revision at 0% traffic, `/health` on the revision's own FQDN, then traffic shift, public check, cleanup to the newest 5 revisions. Concurrency group `deploy-api` |
 | `.github/workflows/deploy-web.yml` | `workflow_call` from `ci.yml` (gated) and `workflow_dispatch` (manual override, skips CI). Formerly push to `main` on `web/**`; concurrency group `deploy-web`. Wrangler pinned to 4; no PR previews (lost when the plan moved off Azure Static Web Apps; not replaced yet, see deploy-plan.md) |
 
 ## Known gotchas for future agents
+
+- **A manual `az containerapp ingress traffic set --revision-weight <rev>=100` pins traffic to that revision.** In multi-revision mode every later deploy then creates a revision with 0% traffic, and a health check against the public FQDN keeps passing against the old revision. `deploy-api.yml` now sets traffic explicitly on each deploy, but a manual rollback is not sticky: the next deploy moves traffic to the new revision again (use `git revert` for a lasting rollback).
 
 - **GitHub OIDC subject can be in an immutable-ID format.** This repo has `use_immutable_subject: true` (check with `gh api repos/<owner>/<repo>/actions/oidc/customization/sub`), so tokens carry `repo:<owner>@<owner_id>/<repo>@<repo_id>:ref:...`, not `repo:<owner>/<repo>:ref:...`. A federated credential written in the plain form fails login with `AADSTS700213: No matching federated identity record found`. Copy the subject from the error message after verifying the IDs with `gh api repos/<owner>/<repo>`.
 - **`cloudflare/wrangler-action@v3` uses an old Wrangler 3.x unless told otherwise**, which fails on an assets-only `wrangler.jsonc` with `Missing entry-point`. Pin it with `wranglerVersion: "4"` or a devDependency.
