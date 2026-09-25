@@ -80,7 +80,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - id: diff
+      - name: Detect changed files
+        id: diff
         env:
           BEFORE: ${{ github.event.before }}
         run: |
